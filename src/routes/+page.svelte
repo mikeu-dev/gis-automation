@@ -1,17 +1,39 @@
 <script lang="ts">
 	import Map from '$lib/components/map/Map.svelte';
 	import DrawTools from '$lib/components/map/DrawTools.svelte';
-	import { calculateArea, formatArea, isAreaValid, MAX_AREA_KM2 } from '$lib/utils/gis';
+	import {
+		calculateArea,
+		formatArea,
+		isAreaValid,
+		MAX_AREA_KM2,
+		getMapSnapshot
+	} from '$lib/utils/gis';
 	import { fetchOSMData } from '$lib/utils/osm';
-	import { Loader2, AlertCircle, CheckCircle } from 'lucide-svelte';
-	import maplibregl from 'maplibre-gl'; // Helper for Popup
-
+	// import { analyzeMapWithAI } from '$lib/utils/gemini'; // Now handled server-side
+	import {
+		Loader2,
+		AlertCircle,
+		CheckCircle,
+		Layers,
+		Edit3,
+		Bot,
+		ChevronDown,
+		ChevronUp,
+		Save
+	} from 'lucide-svelte';
+	import maplibregl from 'maplibre-gl';
 	import type { Map as MapLibreMap } from 'maplibre-gl';
 
 	let mapInstance = $state<MapLibreMap | undefined>(undefined);
 	let currentArea = $state<number>(0);
 	let currentFeature = $state<any>(null);
 	let isProcessing = $state(false);
+
+	// AIS State
+	let showSatellite = $state(false);
+	let isTrainingOpen = $state(false);
+	let aiAnalyzing = $state(false);
+	let aiResponse = $state('');
 
 	// Derived state
 	let isValidSize = $derived(isAreaValid(currentArea));
@@ -31,8 +53,40 @@
 		mapInstance = map;
 		console.log('Map loaded');
 
-		// Setup global interaction handlers
+		// Add Satellite Source (Esri World Imagery)
+		map.addSource('satellite-source', {
+			type: 'raster',
+			tiles: [
+				'https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'
+			],
+			tileSize: 256,
+			attribution: 'Esri, Maxar, Earthstar Geographics, and the GIS User Community'
+		});
+
+		// Add Satellite Layer (Hidden by default)
+		map.addLayer(
+			{
+				id: 'satellite-layer',
+				type: 'raster',
+				source: 'satellite-source',
+				layout: {
+					visibility: 'none'
+				},
+				paint: {}
+			},
+			'generated-buildings-3d'
+		);
+
 		setupMapInteractions(map);
+	}
+
+	function toggleSatellite() {
+		if (!mapInstance) return;
+		showSatellite = !showSatellite;
+		const visibility = showSatellite ? 'visible' : 'none';
+		if (mapInstance.getLayer('satellite-layer')) {
+			mapInstance.setLayoutProperty('satellite-layer', 'visibility', visibility);
+		}
 	}
 
 	function setupMapInteractions(map: MapLibreMap) {
@@ -78,10 +132,6 @@
 		});
 	}
 
-	// ... (rest of the file)
-
-	// Consolidated handler for all draw events (create, update, delete)
-	// We recalculate state based on ALL current features to ensure sync.
 	function updateMapState() {
 		if (!drawToolsComponent) return;
 
@@ -93,10 +143,7 @@
 			return;
 		}
 
-		// For this MVP, we consider the combined area of all polygons
-		// Or we could enforce single polygon. Let's calculate total area.
 		let totalArea = 0;
-		// Search for the last modified feature to set as 'current' (or just use the collection)
 		const collection = {
 			type: 'FeatureCollection',
 			features: allFeatures.features
@@ -105,12 +152,10 @@
 		totalArea = calculateArea(collection);
 
 		currentArea = totalArea;
-		currentFeature = collection; // Store the whole collection
+		currentFeature = collection;
 	}
 
 	function handleDrawCreate() {
-		// Optional: Enforce single polygon by deleting others if needed
-		// For now, just update state
 		updateMapState();
 	}
 
@@ -119,8 +164,6 @@
 	}
 
 	function handleDrawDelete() {
-		console.log('Delete event detected');
-		// Small timeout to allow draw internals to update
 		setTimeout(() => {
 			updateMapState();
 		}, 10);
@@ -129,10 +172,11 @@
 	async function startMapping() {
 		if (!isValidSize || !currentFeature || !mapInstance) return;
 		isProcessing = true;
+		aiResponse = '';
 
 		try {
 			// 1. Fetch Data Real-time
-			const result = await fetchOSMData(currentFeature.features[0]); // Assuming single polygon for MVP
+			const result = await fetchOSMData(currentFeature.features[0]);
 
 			if (result.features.length === 0) {
 				alert('Tidak ditemukan data (gedung/jalan) di area ini.');
@@ -151,9 +195,7 @@
 			// 2. Add Source & Layers to Map
 			const sourceId = 'generated-osm-data';
 
-			// Clean up previous result if exists
 			if (mapInstance.getSource(sourceId)) {
-				// Remove layers first
 				generatedLayerIds.forEach((id) => {
 					if (mapInstance && mapInstance.getLayer(id)) mapInstance.removeLayer(id);
 				});
@@ -173,17 +215,14 @@
 				source: sourceId,
 				filter: ['has', 'building'],
 				paint: {
-					'fill-extrusion-color': '#2563eb', // Blueish
-					// FIX: Robust logic for height.
-					// 1. Remove aggressive zoom interpolation (show at all relevant zooms)
-					// 2. Fallback to 10m if 'height' tag is missing (common in ID)
+					'fill-extrusion-color': '#2563eb',
 					'fill-extrusion-height': [
 						'case',
 						['has', 'height'],
 						['to-number', ['get', 'height']],
 						['has', 'building:levels'],
 						['*', 3, ['to-number', ['get', 'building:levels']]],
-						10 // Default height 10 meters for any building without tags
+						10
 					],
 					'fill-extrusion-base': 0,
 					'fill-extrusion-opacity': 0.8
@@ -198,14 +237,11 @@
 				source: sourceId,
 				filter: ['has', 'highway'],
 				paint: {
-					'line-color': '#f59e0b', // Amber/Orange
+					'line-color': '#f59e0b',
 					'line-width': 2
 				}
 			});
 			generatedLayerIds.push('generated-roads');
-
-			// Hide Draw Control temporarily to visualize result better?
-			// Or keep it. Let's keep it.
 		} catch (error) {
 			console.error(error);
 			alert('Gagal mengambil data mapping. Coba area yang lebih kecil atau coba lagi nanti.');
@@ -214,8 +250,68 @@
 		}
 	}
 
+	function handleEditMode() {
+		if (!mappingResult || !drawToolsComponent || !mapInstance) return;
+
+		const features = mappingResult.features;
+
+		try {
+			drawToolsComponent.add(mappingResult);
+		} catch (e) {
+			console.error('Failed to add features to draw', e);
+			alert('Gagal memindahkan ke mode edit: Format data kompleks.');
+			return;
+		}
+
+		generatedLayerIds.forEach((id) => {
+			if (mapInstance && mapInstance.getLayer(id)) mapInstance.removeLayer(id);
+		});
+		const sourceId = 'generated-osm-data';
+		if (mapInstance && mapInstance.getSource(sourceId)) mapInstance.removeSource(sourceId);
+		generatedLayerIds = [];
+
+		mappingResult = null;
+
+		setTimeout(() => {
+			updateMapState();
+		}, 100);
+	}
+
+	async function runGeminiAnalysis() {
+		if (!mapInstance) return;
+
+		aiAnalyzing = true;
+		aiResponse = '';
+		try {
+			const snapshot = getMapSnapshot(mapInstance);
+			const contextGeoJSON = mappingResult || currentFeature;
+
+			// Call Server API
+			const res = await fetch('/api/analyze', {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json' },
+				body: JSON.stringify({
+					image: snapshot,
+					context: contextGeoJSON
+				})
+			});
+
+			const data = await res.json();
+
+			if (!res.ok) {
+				throw new Error(data.error || 'Failed to analyze');
+			}
+
+			aiResponse = data.text;
+		} catch (e: any) {
+			console.error(e);
+			aiResponse = `Error: ${e.message || 'Gagal menganalisis peta.'}`;
+		} finally {
+			aiAnalyzing = false;
+		}
+	}
+
 	function resetMap() {
-		// Clean up generated layers
 		if (mapInstance) {
 			generatedLayerIds.forEach((id) => {
 				if (mapInstance && mapInstance.getLayer(id)) mapInstance.removeLayer(id);
@@ -225,16 +321,16 @@
 			generatedLayerIds = [];
 		}
 
-		mappingResult = null; // Clear result
+		mappingResult = null;
 
 		if (drawToolsComponent) {
 			drawToolsComponent.deleteAll();
-			// Force switch back to draw mode for better UX
 			drawToolsComponent.changeMode('draw_polygon');
 		}
 		currentArea = 0;
 		currentFeature = null;
 		isProcessing = false;
+		aiResponse = '';
 	}
 
 	function downloadResult() {
@@ -245,7 +341,7 @@
 		const downloadAnchorNode = document.createElement('a');
 		downloadAnchorNode.setAttribute('href', dataStr);
 		downloadAnchorNode.setAttribute('download', 'mapping_result.geojson');
-		document.body.appendChild(downloadAnchorNode); // required for firefox
+		document.body.appendChild(downloadAnchorNode);
 		downloadAnchorNode.click();
 		downloadAnchorNode.remove();
 	}
@@ -253,13 +349,26 @@
 
 <div class="flex h-screen w-full overflow-hidden bg-gray-50">
 	<!-- Sidebar -->
-	<aside class="z-10 flex w-80 flex-col border-r bg-white shadow-lg">
+	<aside class="z-10 flex w-80 flex-col overflow-hidden border-r bg-white shadow-lg">
 		<div class="border-b p-6">
 			<h1 class="text-xl font-bold text-gray-800">GIS Automation</h1>
 			<p class="text-sm text-gray-500">Web Mapping Tool</p>
+
+			<!-- Satellite Toggle -->
+			<div class="mt-4 flex items-center gap-2">
+				<button
+					onclick={toggleSatellite}
+					class="flex flex-1 items-center justify-center gap-2 rounded border px-3 py-2 text-sm font-medium transition-colors {showSatellite
+						? 'border-blue-200 bg-blue-100 text-blue-700'
+						: 'bg-gray-50 text-gray-700 hover:bg-gray-100'}"
+				>
+					<Layers class="h-4 w-4" />
+					{showSatellite ? 'Satellite ON' : 'Satellite OFF'}
+				</button>
+			</div>
 		</div>
 
-		<div class="flex-1 overflow-y-auto p-6">
+		<div class="scrollbar-hide flex-1 overflow-y-auto p-6">
 			<div class="space-y-6">
 				<!-- Area Stats -->
 				<div class="rounded-xl border bg-gray-50 p-4">
@@ -306,14 +415,73 @@
 								<span class="text-xl font-bold text-gray-800">{stats.roads}</span>
 							</div>
 						</div>
-						<button
-							onclick={downloadResult}
-							class="mt-4 w-full text-center text-xs font-semibold text-blue-600 hover:text-blue-800 hover:underline"
-						>
-							Download GeoJSON
-						</button>
+
+						<!-- Action Buttons -->
+						<div class="mt-4 grid grid-cols-2 gap-2">
+							<button
+								onclick={handleEditMode}
+								class="flex items-center justify-center gap-1 rounded border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 shadow-sm hover:bg-gray-50"
+							>
+								<Edit3 class="h-3 w-3" />
+								Edit Mode
+							</button>
+							<button
+								onclick={downloadResult}
+								class="flex items-center justify-center gap-1 rounded bg-blue-600 px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-blue-700"
+							>
+								<Save class="h-3 w-3" />
+								Download
+							</button>
+						</div>
 					</div>
 				{/if}
+
+				<!-- AI Training Section -->
+				<div class="overflow-hidden rounded-xl border border-purple-100 bg-purple-50">
+					<button
+						onclick={() => (isTrainingOpen = !isTrainingOpen)}
+						class="flex w-full items-center justify-between p-4 text-left"
+					>
+						<h3 class="flex items-center gap-2 text-sm font-semibold text-purple-800">
+							<Bot class="h-4 w-4" />
+							AI Automation & Training
+						</h3>
+						{#if isTrainingOpen}
+							<ChevronUp class="h-4 w-4 text-purple-500" />
+						{:else}
+							<ChevronDown class="h-4 w-4 text-purple-500" />
+						{/if}
+					</button>
+
+					{#if isTrainingOpen}
+						<div class="border-t border-purple-100 p-4 pt-0">
+							<div class="mt-3 space-y-3">
+								<p class="text-xs text-purple-600">Using Gemini AI configured on server.</p>
+
+								<button
+									onclick={runGeminiAnalysis}
+									disabled={aiAnalyzing}
+									class="flex w-full items-center justify-center gap-2 rounded bg-purple-600 py-2 text-xs font-semibold text-white transition-colors hover:bg-purple-700 disabled:opacity-50"
+								>
+									{#if aiAnalyzing}
+										<Loader2 class="h-3 w-3 animate-spin" />
+										Analyzing...
+									{:else}
+										Generate Training Data / Analyze
+									{/if}
+								</button>
+
+								{#if aiResponse}
+									<div
+										class="mt-3 max-h-60 overflow-y-auto rounded bg-white p-3 text-xs text-gray-700 shadow-inner"
+									>
+										<pre class="font-mono whitespace-pre-wrap">{aiResponse}</pre>
+									</div>
+								{/if}
+							</div>
+						</div>
+					{/if}
+				</div>
 
 				<!-- Instructions -->
 				{#if currentArea === 0 && !mappingResult}

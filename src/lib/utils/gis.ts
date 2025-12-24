@@ -32,6 +32,14 @@ export function formatArea(areaSqKm: number): string {
 /**
  * Validasi apakah area melebihi batas yang ditentukan
  */
+
 export function isAreaValid(areaSqKm: number): boolean {
     return areaSqKm <= MAX_AREA_KM2;
+}
+
+/**
+ * Capture map canvas as Base64 string
+ */
+export function getMapSnapshot(map: any): string {
+    return map.getCanvas().toDataURL('image/png');
 }

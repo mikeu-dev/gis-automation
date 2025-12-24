@@ -121,6 +121,12 @@
 			draw.changeMode(mode, options);
 		}
 	}
+
+	export function add(geojson: any) {
+		if (draw) {
+			return draw.add(geojson);
+		}
+	}
 </script>
 
 <!-- No visible UI, just attaches control to map -->

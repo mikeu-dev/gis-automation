@@ -17,7 +17,8 @@
 			container: mapContainer,
 			style: 'https://tiles.openfreemap.org/styles/liberty', // Free open source style
 			center: [106.8456, -6.2088], // Jakarta coordinates
-			zoom: 12
+			zoom: 12,
+			preserveDrawingBuffer: true
 		});
 
 		map.addControl(new maplibregl.NavigationControl(), 'top-right');
