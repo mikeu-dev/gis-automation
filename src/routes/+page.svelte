@@ -68,7 +68,96 @@
 		}, 10);
 	}
 
+	async function startMapping() {
+		if (!isValidSize || !currentFeature || !mapInstance) return;
+		isProcessing = true;
+
+		try {
+			// 1. Fetch Data Real-time
+			const result = await fetchOSMData(currentFeature.features[0]); // Assuming single polygon for MVP
+
+			if (result.features.length === 0) {
+				alert('Tidak ditemukan data (gedung/jalan) di area ini.');
+				isProcessing = false;
+				return;
+			}
+
+			// 2. Add Source & Layers to Map
+			const sourceId = 'generated-osm-data';
+
+			// Clean up previous result if exists
+			if (mapInstance.getSource(sourceId)) {
+				// Remove layers first
+				generatedLayerIds.forEach((id) => {
+					if (mapInstance && mapInstance.getLayer(id)) mapInstance.removeLayer(id);
+				});
+				mapInstance.removeSource(sourceId);
+				generatedLayerIds = [];
+			}
+
+			mapInstance.addSource(sourceId, {
+				type: 'geojson',
+				data: result
+			});
+
+			// Layer: Buildings (3D Extrusion Effect)
+			mapInstance.addLayer({
+				id: 'generated-buildings-3d',
+				type: 'fill-extrusion',
+				source: sourceId,
+				filter: ['has', 'building'],
+				paint: {
+					'fill-extrusion-color': '#2563eb', // Blueish
+					'fill-extrusion-height': [
+						'interpolate',
+						['linear'],
+						['zoom'],
+						15,
+						0,
+						15.05,
+						['get', 'height'] // Use 'height' tag if avail, else minimal
+					],
+					// Fallback height simulation if 'height' tag missing
+					'fill-extrusion-base': 0,
+					'fill-extrusion-opacity': 0.8
+				}
+			});
+			generatedLayerIds.push('generated-buildings-3d');
+
+			// Layer: Roads (Lines)
+			mapInstance.addLayer({
+				id: 'generated-roads',
+				type: 'line',
+				source: sourceId,
+				filter: ['has', 'highway'],
+				paint: {
+					'line-color': '#f59e0b', // Amber/Orange
+					'line-width': 2
+				}
+			});
+			generatedLayerIds.push('generated-roads');
+
+			// Hide Draw Control temporarily to visualize result better?
+			// Or keep it. Let's keep it.
+		} catch (error) {
+			console.error(error);
+			alert('Gagal mengambil data mapping. Coba area yang lebih kecil atau coba lagi nanti.');
+		} finally {
+			isProcessing = false;
+		}
+	}
+
 	function resetMap() {
+		// Clean up generated layers
+		if (mapInstance) {
+			generatedLayerIds.forEach((id) => {
+				if (mapInstance && mapInstance.getLayer(id)) mapInstance.removeLayer(id);
+			});
+			const sourceId = 'generated-osm-data';
+			if (mapInstance.getSource(sourceId)) mapInstance.removeSource(sourceId);
+			generatedLayerIds = [];
+		}
+
 		if (drawToolsComponent) {
 			drawToolsComponent.deleteAll();
 			// Force switch back to draw mode for better UX
@@ -77,17 +166,6 @@
 		currentArea = 0;
 		currentFeature = null;
 		isProcessing = false;
-	}
-
-	function startMapping() {
-		if (!isValidSize || !currentFeature) return;
-		isProcessing = true;
-
-		// Simulate processing
-		setTimeout(() => {
-			isProcessing = false;
-			alert('Mapping logic will be implemented here!');
-		}, 2000);
 	}
 </script>
 
