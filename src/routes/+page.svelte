@@ -21,6 +21,10 @@
 	// Store generated layers to manage cleanup
 	let generatedLayerIds: string[] = [];
 
+	// Result State
+	let mappingResult = $state<any>(null);
+	let stats = $state({ buildings: 0, roads: 0 });
+
 	function handleMapLoad(map: MapLibreMap) {
 		mapInstance = map;
 		console.log('Map loaded');
@@ -85,6 +89,14 @@
 				isProcessing = false;
 				return;
 			}
+
+			// Store result
+			mappingResult = result;
+
+			// Calculate Stats
+			const buildings = result.features.filter((f: any) => f.properties.building).length;
+			const roads = result.features.filter((f: any) => f.properties.highway).length;
+			stats = { buildings, roads };
 
 			// 2. Add Source & Layers to Map
 			const sourceId = 'generated-osm-data';
@@ -163,6 +175,8 @@
 			generatedLayerIds = [];
 		}
 
+		mappingResult = null; // Clear result
+
 		if (drawToolsComponent) {
 			drawToolsComponent.deleteAll();
 			// Force switch back to draw mode for better UX
@@ -171,6 +185,19 @@
 		currentArea = 0;
 		currentFeature = null;
 		isProcessing = false;
+	}
+
+	function downloadResult() {
+		if (!mappingResult) return;
+
+		const dataStr =
+			'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(mappingResult));
+		const downloadAnchorNode = document.createElement('a');
+		downloadAnchorNode.setAttribute('href', dataStr);
+		downloadAnchorNode.setAttribute('download', 'mapping_result.geojson');
+		document.body.appendChild(downloadAnchorNode); // required for firefox
+		downloadAnchorNode.click();
+		downloadAnchorNode.remove();
 	}
 </script>
 
@@ -212,8 +239,34 @@
 					</div>
 				{/if}
 
+				<!-- Mapping Results Stats -->
+				{#if mappingResult}
+					<div class="rounded-xl border border-blue-100 bg-blue-50 p-4">
+						<h3 class="mb-3 flex items-center gap-2 text-sm font-semibold text-blue-800">
+							<CheckCircle class="h-4 w-4" />
+							Mapping Success
+						</h3>
+						<div class="grid grid-cols-2 gap-3">
+							<div class="rounded-lg bg-white p-3 shadow-sm">
+								<span class="block text-xs text-gray-500 uppercase">Buildings</span>
+								<span class="text-xl font-bold text-gray-800">{stats.buildings}</span>
+							</div>
+							<div class="rounded-lg bg-white p-3 shadow-sm">
+								<span class="block text-xs text-gray-500 uppercase">Roads</span>
+								<span class="text-xl font-bold text-gray-800">{stats.roads}</span>
+							</div>
+						</div>
+						<button
+							onclick={downloadResult}
+							class="mt-4 w-full text-center text-xs font-semibold text-blue-600 hover:text-blue-800 hover:underline"
+						>
+							Download GeoJSON
+						</button>
+					</div>
+				{/if}
+
 				<!-- Instructions -->
-				{#if currentArea === 0}
+				{#if currentArea === 0 && !mappingResult}
 					<div class="rounded-lg border border-blue-100 bg-blue-50 p-4 text-sm text-blue-700">
 						<p>Use the Draw Tool (top-left on map) to draw a polygon area that you want to map.</p>
 					</div>
