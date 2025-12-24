@@ -4,6 +4,8 @@
 	import { calculateArea, formatArea, isAreaValid, MAX_AREA_KM2 } from '$lib/utils/gis';
 	import { fetchOSMData } from '$lib/utils/osm';
 	import { Loader2, AlertCircle, CheckCircle } from 'lucide-svelte';
+	import maplibregl from 'maplibre-gl'; // Helper for Popup
+
 	import type { Map as MapLibreMap } from 'maplibre-gl';
 
 	let mapInstance = $state<MapLibreMap | undefined>(undefined);
@@ -28,7 +30,55 @@
 	function handleMapLoad(map: MapLibreMap) {
 		mapInstance = map;
 		console.log('Map loaded');
+
+		// Setup global interaction handlers
+		setupMapInteractions(map);
 	}
+
+	function setupMapInteractions(map: MapLibreMap) {
+		// Handle Click for Popups
+		map.on('click', (e) => {
+			if (generatedLayerIds.length === 0) return;
+
+			// Query our generated layers
+			const features = map.queryRenderedFeatures(e.point, { layers: generatedLayerIds });
+
+			if (features.length > 0) {
+				const feature = features[0];
+				const props = feature.properties || {};
+
+				// Create HTML Table for properties
+				let html =
+					'<div class="p-2 text-sm"><h4 class="font-bold mb-2 border-b pb-1">Feature Details</h4><table class="w-full text-left">';
+				for (const [key, value] of Object.entries(props)) {
+					html += `<tr class="border-b border-gray-100 last:border-0">
+                        <td class="pr-3 py-1 text-gray-500 font-medium">${key}</td>
+                        <td class="py-1 text-gray-800 break-words">${value}</td>
+                    </tr>`;
+				}
+				html += '</table></div>';
+
+				new maplibregl.Popup({ maxWidth: '300px' }).setLngLat(e.lngLat).setHTML(html).addTo(map);
+			}
+		});
+
+		// Handle Mouse Cursor (Pointer on hover)
+		map.on('mousemove', (e) => {
+			if (generatedLayerIds.length === 0) {
+				map.getCanvas().style.cursor = '';
+				return;
+			}
+
+			const features = map.queryRenderedFeatures(e.point, { layers: generatedLayerIds });
+			if (features.length > 0) {
+				map.getCanvas().style.cursor = 'pointer';
+			} else {
+				map.getCanvas().style.cursor = '';
+			}
+		});
+	}
+
+	// ... (rest of the file)
 
 	// Consolidated handler for all draw events (create, update, delete)
 	// We recalculate state based on ALL current features to ensure sync.
