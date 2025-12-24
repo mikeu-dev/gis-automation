@@ -1,19 +1,16 @@
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenAI } from '@google/genai';
 
 /**
  * Initializes the Gemini AI model with the provided API Key.
  */
-export function getGeminiModel(apiKey: string) {
-    const genAI = new GoogleGenerativeAI(apiKey);
-    // Use the gemini-pro-vision model (or gemini-1.5-flash which is multimodal and fast)
-    // For image + text, we typically use a multimodal model.
-    return genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
+export function getGeminiClient(apiKey: string) {
+    return new GoogleGenAI({ apiKey, apiVersion: 'v1' });
 }
 
 /**
  * Analyzes a map snapshot and current GeoJSON to suggest improvements.
  * @param apiKey User's API Key
- * @param imageBase64 Base64 string of the map screenshot (without data:image/png;base64 prefix preferably, or handle it)
+ * @param imageBase64 Base64 string of the map screenshot 
  * @param currentGeoJSON The current GeoJSON features
  * @param promptText Optional custom prompt
  */
@@ -24,15 +21,10 @@ export async function analyzeMapWithAI(
     promptText: string = ''
 ) {
     try {
-        const model = getGeminiModel(apiKey);
+        const client = getGeminiClient(apiKey);
 
-        // Sanitize Base64 if needed
-        const imagePart = {
-            inlineData: {
-                data: imageBase64.replace(/^data:image\/\w+;base64,/, ''),
-                mimeType: 'image/png',
-            },
-        };
+        // Remove header if present
+        const cleanBase64 = imageBase64.replace(/^data:image\/\w+;base64,/, '');
 
         const defaultPrompt = `
 You are a GIS expert. I will provide you with a satellite map image and the corresponding GeoJSON data (in JSON format) that represents the currently mapped features (buildings, roads).
@@ -53,12 +45,27 @@ Return your response in Markdown.
 
         const finalPrompt = promptText || defaultPrompt;
 
-        const result = await model.generateContent([finalPrompt, imagePart]);
-        const response = await result.response;
+        const response = await client.models.generateContent({
+            model: 'gemini-1.5-flash',
+            contents: [
+                {
+                    parts: [
+                        { text: finalPrompt },
+                        {
+                            inlineData: {
+                                mimeType: 'image/png',
+                                data: cleanBase64
+                            }
+                        }
+                    ]
+                }
+            ]
+        });
+
         return response.text();
 
     } catch (error) {
         console.error('Gemini API Error:', error);
-        throw new Error('Failed to analyze map with AI.');
+        throw error;
     }
 }

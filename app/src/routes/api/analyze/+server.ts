@@ -19,6 +19,6 @@ export async function POST({ request }) {
         return json({ text: responseText });
     } catch (error) {
         console.error('API Error:', error);
-        return json({ error: 'Failed to process AI request' }, { status: 500 });
+        return json({ error: (error as any).message || 'Failed to process AI request' }, { status: 500 });
     }
 }
