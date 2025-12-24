@@ -115,6 +115,12 @@
 	export function getAll() {
 		return draw ? draw.getAll() : null;
 	}
+
+	export function changeMode(mode: string, options?: any) {
+		if (draw) {
+			draw.changeMode(mode, options);
+		}
+	}
 </script>
 
 <!-- No visible UI, just attaches control to map -->

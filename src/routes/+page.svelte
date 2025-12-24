@@ -14,25 +14,69 @@
 	let isValidSize = $derived(isAreaValid(currentArea));
 	let areaDisplay = $derived(formatArea(currentArea));
 
+	// Component reference
+	let drawToolsComponent = $state<any>(null);
+
 	function handleMapLoad(map: MapLibreMap) {
 		mapInstance = map;
 		console.log('Map loaded');
 	}
 
-	function handleDraw(feature: any) {
-		if (!feature) {
+	// Consolidated handler for all draw events (create, update, delete)
+	// We recalculate state based on ALL current features to ensure sync.
+	function updateMapState() {
+		if (!drawToolsComponent) return;
+
+		const allFeatures = drawToolsComponent.getAll();
+
+		if (!allFeatures || allFeatures.features.length === 0) {
 			currentArea = 0;
 			currentFeature = null;
 			return;
 		}
 
-		currentFeature = feature;
-		currentArea = calculateArea(feature);
+		// For this MVP, we consider the combined area of all polygons
+		// Or we could enforce single polygon. Let's calculate total area.
+		let totalArea = 0;
+		// Search for the last modified feature to set as 'current' (or just use the collection)
+		const collection = {
+			type: 'FeatureCollection',
+			features: allFeatures.features
+		};
+
+		totalArea = calculateArea(collection);
+
+		currentArea = totalArea;
+		currentFeature = collection; // Store the whole collection
+	}
+
+	function handleDrawCreate() {
+		// Optional: Enforce single polygon by deleting others if needed
+		// For now, just update state
+		updateMapState();
+	}
+
+	function handleDrawUpdate() {
+		updateMapState();
 	}
 
 	function handleDrawDelete() {
+		console.log('Delete event detected');
+		// Small timeout to allow draw internals to update
+		setTimeout(() => {
+			updateMapState();
+		}, 10);
+	}
+
+	function resetMap() {
+		if (drawToolsComponent) {
+			drawToolsComponent.deleteAll();
+			// Force switch back to draw mode for better UX
+			drawToolsComponent.changeMode('draw_polygon');
+		}
 		currentArea = 0;
 		currentFeature = null;
+		isProcessing = false;
 	}
 
 	function startMapping() {
@@ -95,21 +139,29 @@
 		</div>
 
 		<div class="border-t p-6">
-			<button
-				onclick={startMapping}
-				disabled={!isValidSize || currentArea === 0 || isProcessing}
-				class="flex w-full items-center justify-center gap-2 rounded-lg py-3 font-semibold text-white transition-all
-                {isValidSize && currentArea > 0 && !isProcessing
-					? 'bg-blue-600 hover:bg-blue-700 hover:shadow-lg'
-					: 'cursor-not-allowed bg-gray-300'}"
-			>
-				{#if isProcessing}
-					<Loader2 class="h-5 w-5 animate-spin" />
-					Processing...
-				{:else}
-					Generate Mapping
-				{/if}
-			</button>
+			<div class="flex gap-2">
+				<button
+					onclick={resetMap}
+					class="mb-0 flex w-1/3 items-center justify-center gap-2 rounded-lg border border-gray-300 bg-white py-3 font-semibold text-gray-700 transition-all hover:bg-gray-50"
+				>
+					Reset
+				</button>
+				<button
+					onclick={startMapping}
+					disabled={!isValidSize || currentArea === 0 || isProcessing}
+					class="flex flex-1 items-center justify-center gap-2 rounded-lg py-3 font-semibold text-white transition-all
+                    {isValidSize && currentArea > 0 && !isProcessing
+						? 'bg-blue-600 hover:bg-blue-700 hover:shadow-lg'
+						: 'cursor-not-allowed bg-gray-300'}"
+				>
+					{#if isProcessing}
+						<Loader2 class="h-5 w-5 animate-spin" />
+						Processing...
+					{:else}
+						Generate Mapping
+					{/if}
+				</button>
+			</div>
 		</div>
 	</aside>
 
@@ -118,9 +170,10 @@
 		<Map onLoad={handleMapLoad} />
 		{#if mapInstance}
 			<DrawTools
+				bind:this={drawToolsComponent}
 				map={mapInstance}
-				onDrawCreate={handleDraw}
-				onDrawUpdate={handleDraw}
+				onDrawCreate={handleDrawCreate}
+				onDrawUpdate={handleDrawUpdate}
 				onDrawDelete={handleDrawDelete}
 			/>
 		{/if}
