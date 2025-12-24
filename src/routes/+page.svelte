@@ -2,6 +2,7 @@
 	import Map from '$lib/components/map/Map.svelte';
 	import DrawTools from '$lib/components/map/DrawTools.svelte';
 	import { calculateArea, formatArea, isAreaValid, MAX_AREA_KM2 } from '$lib/utils/gis';
+	import { fetchOSMData } from '$lib/utils/osm';
 	import { Loader2, AlertCircle, CheckCircle } from 'lucide-svelte';
 	import type { Map as MapLibreMap } from 'maplibre-gl';
 
@@ -16,6 +17,9 @@
 
 	// Component reference
 	let drawToolsComponent = $state<any>(null);
+
+	// Store generated layers to manage cleanup
+	let generatedLayerIds: string[] = [];
 
 	function handleMapLoad(map: MapLibreMap) {
 		mapInstance = map;
@@ -108,16 +112,17 @@
 				filter: ['has', 'building'],
 				paint: {
 					'fill-extrusion-color': '#2563eb', // Blueish
+					// FIX: Robust logic for height.
+					// 1. Remove aggressive zoom interpolation (show at all relevant zooms)
+					// 2. Fallback to 10m if 'height' tag is missing (common in ID)
 					'fill-extrusion-height': [
-						'interpolate',
-						['linear'],
-						['zoom'],
-						15,
-						0,
-						15.05,
-						['get', 'height'] // Use 'height' tag if avail, else minimal
+						'case',
+						['has', 'height'],
+						['to-number', ['get', 'height']],
+						['has', 'building:levels'],
+						['*', 3, ['to-number', ['get', 'building:levels']]],
+						10 // Default height 10 meters for any building without tags
 					],
-					// Fallback height simulation if 'height' tag missing
 					'fill-extrusion-base': 0,
 					'fill-extrusion-opacity': 0.8
 				}

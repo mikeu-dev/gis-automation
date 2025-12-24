@@ -24,8 +24,9 @@ export async function fetchOSMData(polygonGeoJSON: any) {
             out geom;
         `;
 
-        // 3. Fetch from Overpass API (Main Instance)
-        const response = await fetch('https://overpass-api.de/api/interpreter', {
+        // 3. Fetch from Overpass API (Alternative Instance - Kumi Systems)
+        // Main instance (overpass-api.de) often timeouts
+        const response = await fetch('https://overpass.kumi.systems/api/interpreter', {
             method: 'POST',
             body: query
         });
