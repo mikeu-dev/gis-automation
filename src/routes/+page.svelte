@@ -10,17 +10,7 @@
 	} from '$lib/utils/gis';
 	import { fetchOSMData } from '$lib/utils/osm';
 	// import { analyzeMapWithAI } from '$lib/utils/gemini'; // Now handled server-side
-	import {
-		Loader2,
-		AlertCircle,
-		CheckCircle,
-		Layers,
-		Edit3,
-		Bot,
-		ChevronDown,
-		ChevronUp,
-		Save
-	} from 'lucide-svelte';
+	import { Loader2, AlertCircle, CheckCircle, Layers, Edit3, Bot, Save } from 'lucide-svelte';
 	import maplibregl from 'maplibre-gl';
 	import type { Map as MapLibreMap } from 'maplibre-gl';
 
@@ -31,7 +21,7 @@
 
 	// AIS State
 	let showSatellite = $state(false);
-	let isTrainingOpen = $state(false);
+	// isTrainingOpen removed
 	let aiAnalyzing = $state(false);
 	let aiResponse = $state('');
 
@@ -242,6 +232,15 @@
 				}
 			});
 			generatedLayerIds.push('generated-roads');
+
+			// 3. Auto-Run AI Analysis
+			// Open the panel so user sees it happening
+			// isTrainingOpen removed
+
+			// Small delay to ensure layers are rendered on canvas before snapshot
+			setTimeout(() => {
+				runGeminiAnalysis();
+			}, 1000);
 		} catch (error) {
 			console.error(error);
 			alert('Gagal mengambil data mapping. Coba area yang lebih kecil atau coba lagi nanti.');
@@ -433,55 +432,28 @@
 								Download
 							</button>
 						</div>
+
+						<!-- AI Analysis Result -->
+						{#if aiAnalyzing}
+							<div
+								class="mt-4 flex items-center justify-center gap-2 rounded bg-purple-50 p-3 text-xs text-purple-700"
+							>
+								<Loader2 class="h-3 w-3 animate-spin" />
+								<span class="font-medium">AI Analyzing Map...</span>
+							</div>
+						{:else if aiResponse}
+							<div class="mt-4 rounded border border-purple-100 bg-purple-50 p-3">
+								<h4 class="mb-2 flex items-center gap-2 text-xs font-bold text-purple-800">
+									<Bot class="h-3 w-3" />
+									AI Verification
+								</h4>
+								<div class="max-h-60 overflow-y-auto text-xs text-gray-700">
+									<pre class="font-mono whitespace-pre-wrap">{aiResponse}</pre>
+								</div>
+							</div>
+						{/if}
 					</div>
 				{/if}
-
-				<!-- AI Training Section -->
-				<div class="overflow-hidden rounded-xl border border-purple-100 bg-purple-50">
-					<button
-						onclick={() => (isTrainingOpen = !isTrainingOpen)}
-						class="flex w-full items-center justify-between p-4 text-left"
-					>
-						<h3 class="flex items-center gap-2 text-sm font-semibold text-purple-800">
-							<Bot class="h-4 w-4" />
-							AI Automation & Training
-						</h3>
-						{#if isTrainingOpen}
-							<ChevronUp class="h-4 w-4 text-purple-500" />
-						{:else}
-							<ChevronDown class="h-4 w-4 text-purple-500" />
-						{/if}
-					</button>
-
-					{#if isTrainingOpen}
-						<div class="border-t border-purple-100 p-4 pt-0">
-							<div class="mt-3 space-y-3">
-								<p class="text-xs text-purple-600">Using Gemini AI configured on server.</p>
-
-								<button
-									onclick={runGeminiAnalysis}
-									disabled={aiAnalyzing}
-									class="flex w-full items-center justify-center gap-2 rounded bg-purple-600 py-2 text-xs font-semibold text-white transition-colors hover:bg-purple-700 disabled:opacity-50"
-								>
-									{#if aiAnalyzing}
-										<Loader2 class="h-3 w-3 animate-spin" />
-										Analyzing...
-									{:else}
-										Generate Training Data / Analyze
-									{/if}
-								</button>
-
-								{#if aiResponse}
-									<div
-										class="mt-3 max-h-60 overflow-y-auto rounded bg-white p-3 text-xs text-gray-700 shadow-inner"
-									>
-										<pre class="font-mono whitespace-pre-wrap">{aiResponse}</pre>
-									</div>
-								{/if}
-							</div>
-						</div>
-					{/if}
-				</div>
 
 				<!-- Instructions -->
 				{#if currentArea === 0 && !mappingResult}
