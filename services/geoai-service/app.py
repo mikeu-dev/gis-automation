@@ -7,6 +7,14 @@ from flask_cors import CORS
 app = Flask(__name__)
 CORS(app)  # Enable CORS for all routes
 
+@app.route('/', methods=['GET'])
+def index():
+    return jsonify({
+        "status": "online",
+        "service": "GeoAI Service",
+        "endpoints": ["/analyze"]
+    })
+
 def analyze_image_with_geoai(image_base64, prompt=None):
     """
     Placeholder function to integrate with geoai-py.
