@@ -17,30 +17,70 @@ def index():
 
 def analyze_image_with_geoai(image_base64, prompt=None):
     """
-    Placeholder function to integrate with geoai-py.
-    
-    In a real implementation, this would:
-    1. Decode the base64 image.
-    2. Load a GeoAI model (e.g., for building detection, segmentation).
-    3. Run inference.
-    4. Return the results (e.g., GeoJSON, count of objects, description).
+    Analyzes the image using GeoAI (GroundedSAM) to detect features based on prompt.
     """
     try:
-        # Example: Just returning a mock response for now to prove connection
-        # TODO: Replace with actual geoai-py logic
+        import geopandas as gpd
+        from geoai.segment import GroundedSAM
+
+        # 1. Decode base64 image to temporary file
+        input_filename = "temp_input.png"
+        output_filename = "temp_output.geojson"
         
-        # import geoai
-        # model = geoai.load_model('building_detection')
-        # results = model.predict(decode_image(image_base64))
-        
-        return {
-            "message": "GeoAI analysis successful (Mock)",
-            "analysis": "This is a placeholder response. GeoAI integration is ready to be implemented with specific model logic.",
-            "features_detected": 0
-        }
+        # Remove header if present (although utils/geoai.ts did it, good to be safe)
+        if "," in image_base64:
+            image_base64 = image_base64.split(",")[1]
+            
+        with open(input_filename, "wb") as f:
+            f.write(base64.b64decode(image_base64))
+
+        # 2. Determine prompt
+        text_prompt = prompt if prompt else "building"
+        print(f"Running GroundedSAM with prompt: {text_prompt}")
+
+        # 3. Initialize Model (this will download weights on first run)
+        model = GroundedSAM()
+
+        # 4. Run Segmentation
+        # usage: segment(image, text_prompt, output, ...)
+        model.segment(
+            image=input_filename,
+            text_prompt=text_prompt,
+            output=output_filename,
+            simplify_tolerance=0.5 # Simplify polygons slightly
+        )
+
+        # 5. Process Results
+        if os.path.exists(output_filename):
+            gdf = gpd.read_file(output_filename)
+            count = len(gdf)
+            geojson_str = gdf.to_json()
+            
+            # Clean up
+            # os.remove(input_filename)
+            # os.remove(output_filename) # Keep for debugging if needed
+            
+            return {
+                "message": "Success",
+                "analysis": f"GeoAI detected {count} features matching '{text_prompt}'.",
+                "features_detected": count,
+                "data": geojson_str
+            }
+        else:
+            return {
+                "message": "No results",
+                "analysis": f"No features found for '{text_prompt}'.",
+                "features_detected": 0
+            }
+
     except Exception as e:
         print(f"Error in GeoAI processing: {e}")
-        raise e
+        # Return error as analysis so it's visible in frontend
+        return {
+            "message": "Error",
+            "analysis": f"Analysis failed: {str(e)}",
+            "features_detected": 0
+        }
 
 @app.route('/analyze', methods=['POST'])
 def analyze():
