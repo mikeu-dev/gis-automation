@@ -1,12 +1,7 @@
 import { json } from '@sveltejs/kit';
-import { analyzeMapWithAI } from '$lib/utils/gemini';
-import { GEMINI_API_KEY } from '$env/static/private';
+import { analyzeMapWithGeoAI } from '$lib/utils/geoai';
 
 export async function POST({ request }) {
-    if (!GEMINI_API_KEY) {
-        return json({ error: 'Server configuration error: API Key missing' }, { status: 500 });
-    }
-
     try {
         const { image, context } = await request.json();
 
@@ -14,7 +9,7 @@ export async function POST({ request }) {
             return json({ error: 'Image data missing' }, { status: 400 });
         }
 
-        const responseText = await analyzeMapWithAI(GEMINI_API_KEY, image, context);
+        const responseText = await analyzeMapWithGeoAI(image, context);
 
         return json({ text: responseText });
     } catch (error) {
