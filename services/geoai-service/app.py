@@ -70,7 +70,19 @@ def analyze_image_with_geoai(image_base64, prompt=None):
 
         # 4. Generate Content
         default_prompt = "Analyze this satellite map image. Identify visible features like buildings, roads, vegetation, and water bodies. Provide a concise summary of what is seen in the image, estimating the density of buildings and types of roads."
-        text_prompt = prompt if prompt else default_prompt
+        
+        # Handle context/prompt being a dict (GeoJSON) or string
+        if isinstance(prompt, (dict, list)):
+            import json
+            context_str = json.dumps(prompt)
+            # If context is provided (GeoJSON), we can append it or just use the default prompt + context
+            # But usually for visual analysis, we just want the prompt. 
+            # If the frontend sent GeoJSON as 'context', effectively treating it as 'prompt' was the issue.
+            text_prompt = f"{default_prompt}\n\nContext data: {context_str[:1000]}..." # Truncate if too long
+        elif prompt and isinstance(prompt, str) and prompt.strip():
+            text_prompt = prompt
+        else:
+            text_prompt = default_prompt
         
         print(f"Generating content with Gemini Flash... Prompt: {text_prompt}")
         result = model.generate_content([myfile, text_prompt])
