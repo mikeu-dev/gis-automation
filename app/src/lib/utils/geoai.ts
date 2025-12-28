@@ -18,6 +18,9 @@ export async function analyzeMapWithGeoAI(
         // But keeping it consistent with previous implementation
         const cleanBase64 = imageBase64.replace(/^data:image\/\w+;base64,/, '');
 
+        const controller = new AbortController();
+        const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minutes timeout
+
         const response = await fetch(GEOAI_SERVICE_URL, {
             method: 'POST',
             headers: {
@@ -26,8 +29,9 @@ export async function analyzeMapWithGeoAI(
             body: JSON.stringify({
                 image: cleanBase64,
                 context: context
-            })
-        });
+            }),
+            signal: controller.signal
+        }).finally(() => clearTimeout(timeoutId));
 
         if (!response.ok) {
             const errorData = await response.json().catch(() => ({}));

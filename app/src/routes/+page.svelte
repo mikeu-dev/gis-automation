@@ -24,6 +24,9 @@
 	// isTrainingOpen removed
 	let aiAnalyzing = $state(false);
 	let aiResponse = $state('');
+	let aiAnalysisTimer = $state<number | undefined>(undefined);
+	let aiTimeElapsed = $state('0:00');
+	let aiStatusMessage = $state('AI Analyzing Map...');
 
 	// Derived state
 	let isValidSize = $derived(isAreaValid(currentArea));
@@ -285,6 +288,22 @@
 			const snapshot = getMapSnapshot(mapInstance);
 			const contextGeoJSON = mappingResult || currentFeature;
 
+			// Start Timer
+			let seconds = 0;
+			aiAnalysisTimer = setInterval(() => {
+				seconds++;
+				const minutes = Math.floor(seconds / 60);
+				const secs = seconds % 60;
+				aiTimeElapsed = `${minutes}:${secs.toString().padStart(2, '0')}`;
+				
+				// Update status update message based on time
+				if (seconds > 10) aiStatusMessage = 'Mengirim data ke GeoAI...';
+				if (seconds > 30) aiStatusMessage = 'Sedang memproses geometri (ini mungkin memakan waktu)...';
+				if (seconds > 60) aiStatusMessage = 'Analisis mendalam sedang berlangsung...';
+				if (seconds > 120) aiStatusMessage = 'Masih bekerja, mohon bersabar (maks 5 menit)...';
+				if (seconds > 240) aiStatusMessage = 'Hampir selesai...';
+			}, 1000);
+
 			// Call Server API
 			const res = await fetch('/api/analyze', {
 				method: 'POST',
@@ -305,8 +324,14 @@
 		} catch (e: any) {
 			console.error(e);
 			aiResponse = `Error: ${e.message || 'Gagal menganalisis peta.'}`;
+			if (e.name === 'AbortError') {
+				aiResponse = 'Waktu habis. Analisis memakan waktu terlalu lama (> 5 menit). Silakan coba dengan area yang lebih kecil.';
+			}
 		} finally {
 			aiAnalyzing = false;
+			if (aiAnalysisTimer) clearInterval(aiAnalysisTimer);
+			aiStatusMessage = 'AI Analyzing Map...'; // Reset default
+			aiTimeElapsed = '0:00';
 		}
 	}
 
@@ -436,10 +461,13 @@
 						<!-- AI Analysis Result -->
 						{#if aiAnalyzing}
 							<div
-								class="mt-4 flex items-center justify-center gap-2 rounded bg-purple-50 p-3 text-xs text-purple-700"
+								class="mt-4 flex flex-col items-center justify-center gap-2 rounded bg-purple-50 p-4 text-xs text-purple-700"
 							>
-								<Loader2 class="h-3 w-3 animate-spin" />
-								<span class="font-medium">AI Analyzing Map...</span>
+								<div class="flex items-center gap-2">
+									<Loader2 class="h-4 w-4 animate-spin" />
+									<span class="font-bold text-sm">{aiTimeElapsed}</span>
+								</div>
+								<span class="font-medium text-center">{aiStatusMessage}</span>
 							</div>
 						{:else if aiResponse}
 							<div class="mt-4 rounded border border-purple-100 bg-purple-50 p-3">
