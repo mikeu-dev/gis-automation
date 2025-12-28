@@ -31,8 +31,26 @@ def analyze_image_with_geoai(image_base64, prompt=None):
         if "," in image_base64:
             image_base64 = image_base64.split(",")[1]
             
+        from PIL import Image
+        
+        # Save raw bytes first
         with open(input_filename, "wb") as f:
             f.write(base64.b64decode(image_base64))
+            
+        # Optimize size: Resize to max 1024px
+        try:
+            with Image.open(input_filename) as img:
+                # Calculate new size maintaining aspect ratio
+                max_size = 1024
+                ratio = min(max_size / img.width, max_size / img.height)
+                
+                if ratio < 1: # Only resize if larger than max_size
+                    new_size = (int(img.width * ratio), int(img.height * ratio))
+                    print(f"Resizing input image from {img.size} to {new_size}")
+                    img = img.resize(new_size, Image.Resampling.LANCZOS)
+                    img.save(input_filename)
+        except Exception as e:
+            print(f"Warning: Failed to resize image: {e}")
 
         # 2. Determine prompt
         text_prompt = prompt if prompt else "building"
