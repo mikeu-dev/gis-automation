@@ -66,7 +66,8 @@ def analyze_image_with_geoai(image_base64, prompt=None):
         myfile = genai.upload_file(input_filename)
         
         # 3. Initialize Model
-        model = genai.GenerativeModel("gemini-1.5-flash")
+        # Available models: gemini-2.0-flash, gemini-2.5-flash, etc.
+        model = genai.GenerativeModel("gemini-2.0-flash")
 
         # 4. Generate Content
         default_prompt = "Analyze this satellite map image. Identify visible features like buildings, roads, vegetation, and water bodies. Provide a concise summary of what is seen in the image, estimating the density of buildings and types of roads."
