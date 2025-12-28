@@ -1,3 +1,6 @@
 geoai-py
 Flask
 flask-cors
+google-generativeai
+python-dotenv
+Pillow
