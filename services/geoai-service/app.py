@@ -66,29 +66,44 @@ def analyze_image_with_geoai(image_base64, prompt=None):
         myfile = genai.upload_file(input_filename)
         
         # 3. Initialize Model
-        # Available models: gemini-2.0-flash, gemini-2.5-flash, etc.
-        model = genai.GenerativeModel("gemini-2.0-flash")
+        # Use generic alias 'gemini-flash-latest' which often points to the best stable version
+        # If this fails, we can fallback to 'gemini-1.5-flash-latest' or specific versions
+        model_name = "gemini-flash-latest" 
+        model = genai.GenerativeModel(model_name)
 
-        # 4. Generate Content
+        # 4. Generate Content with Retry Logic
         default_prompt = "Analyze this satellite map image. Identify visible features like buildings, roads, vegetation, and water bodies. Provide a concise summary of what is seen in the image, estimating the density of buildings and types of roads."
         
         # Handle context/prompt being a dict (GeoJSON) or string
         if isinstance(prompt, (dict, list)):
             import json
             context_str = json.dumps(prompt)
-            # If context is provided (GeoJSON), we can append it or just use the default prompt + context
-            # But usually for visual analysis, we just want the prompt. 
-            # If the frontend sent GeoJSON as 'context', effectively treating it as 'prompt' was the issue.
-            text_prompt = f"{default_prompt}\n\nContext data: {context_str[:1000]}..." # Truncate if too long
+            text_prompt = f"{default_prompt}\n\nContext data: {context_str[:1000]}..." 
         elif prompt and isinstance(prompt, str) and prompt.strip():
             text_prompt = prompt
         else:
             text_prompt = default_prompt
         
-        print(f"Generating content with Gemini Flash... Prompt: {text_prompt}")
-        result = model.generate_content([myfile, text_prompt])
+        print(f"Generating content with {model_name}... Prompt: {text_prompt}")
         
-        response_text = result.text
+        # Simple Retry Mechanism
+        import time
+        max_retries = 3
+        for attempt in range(max_retries):
+            try:
+                result = model.generate_content([myfile, text_prompt])
+                response_text = result.text # Access text to ensure it was generated
+                break # Success
+            except Exception as e:
+                error_str = str(e)
+                if "429" in error_str or "quota" in error_str.lower():
+                    if attempt < max_retries - 1:
+                        wait_time = (attempt + 1) * 5 # Exponential-ish: 5s, 10s, 15s...
+                        print(f"Rate limited (429). Retrying in {wait_time}s... (Attempt {attempt+1}/{max_retries})")
+                        time.sleep(wait_time)
+                        continue
+                # If not 429 or retries exhausted, re-raise
+                raise e
         
         return {
             "message": "Success",
