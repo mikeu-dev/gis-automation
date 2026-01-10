@@ -5,12 +5,11 @@
 		calculateArea,
 		formatArea,
 		isAreaValid,
-		MAX_AREA_KM2,
-		getMapSnapshot
+		MAX_AREA_KM2
 	} from '$lib/utils/gis';
 	import { fetchOSMData } from '$lib/utils/osm';
 	// import { analyzeMapWithAI } from '$lib/utils/gemini'; // Now handled server-side
-	import { Loader2, AlertCircle, CheckCircle, Layers, Edit3, Bot, Save } from 'lucide-svelte';
+	import { Loader2, AlertCircle, CheckCircle, Layers, Edit3, Save } from 'lucide-svelte';
 	import maplibregl from 'maplibre-gl';
 	import type { Map as MapLibreMap } from 'maplibre-gl';
 
@@ -19,14 +18,9 @@
 	let currentFeature = $state<any>(null);
 	let isProcessing = $state(false);
 
-	// AIS State
+	// Satellite State
 	let showSatellite = $state(false);
-	// isTrainingOpen removed
-	let aiAnalyzing = $state(false);
-	let aiResponse = $state('');
-	let aiAnalysisTimer = $state<number | undefined>(undefined);
-	let aiTimeElapsed = $state('0:00');
-	let aiStatusMessage = $state('AI Analyzing Map...');
+	// AI Analysis disabled
 
 	// Derived state
 	let isValidSize = $derived(isAreaValid(currentArea));
@@ -57,6 +51,16 @@
 		});
 
 		// Add Satellite Layer (Hidden by default)
+		// Find the first symbol layer to place satellite behind labels
+		let firstSymbolId;
+		const layers = map.getStyle().layers;
+		for (const layer of layers) {
+			if (layer.type === 'symbol') {
+				firstSymbolId = layer.id;
+				break;
+			}
+		}
+
 		map.addLayer(
 			{
 				id: 'satellite-layer',
@@ -67,7 +71,7 @@
 				},
 				paint: {}
 			},
-			'generated-buildings-3d'
+			firstSymbolId // Place behind labels if found, otherwise on top
 		);
 
 		setupMapInteractions(map);
@@ -165,7 +169,6 @@
 	async function startMapping() {
 		if (!isValidSize || !currentFeature || !mapInstance) return;
 		isProcessing = true;
-		aiResponse = '';
 
 		try {
 			// 1. Fetch Data Real-time
@@ -236,14 +239,7 @@
 			});
 			generatedLayerIds.push('generated-roads');
 
-			// 3. Auto-Run AI Analysis
-			// Open the panel so user sees it happening
-			// isTrainingOpen removed
-
-			// Small delay to ensure layers are rendered on canvas before snapshot
-			setTimeout(() => {
-				runGeminiAnalysis();
-			}, 1000);
+			// AI Analysis disabled - removed auto-run
 		} catch (error) {
 			console.error(error);
 			alert('Gagal mengambil data mapping. Coba area yang lebih kecil atau coba lagi nanti.');
@@ -279,61 +275,7 @@
 		}, 100);
 	}
 
-	async function runGeminiAnalysis() {
-		if (!mapInstance) return;
-
-		aiAnalyzing = true;
-		aiResponse = '';
-		try {
-			const snapshot = getMapSnapshot(mapInstance);
-			const contextGeoJSON = mappingResult || currentFeature;
-
-			// Start Timer
-			let seconds = 0;
-			aiAnalysisTimer = setInterval(() => {
-				seconds++;
-				const minutes = Math.floor(seconds / 60);
-				const secs = seconds % 60;
-				aiTimeElapsed = `${minutes}:${secs.toString().padStart(2, '0')}`;
-				
-				// Update status update message based on time
-				if (seconds > 10) aiStatusMessage = 'Mengirim data ke GeoAI...';
-				if (seconds > 30) aiStatusMessage = 'Sedang memproses geometri (ini mungkin memakan waktu)...';
-				if (seconds > 60) aiStatusMessage = 'Analisis mendalam sedang berlangsung...';
-				if (seconds > 120) aiStatusMessage = 'Masih bekerja, mohon bersabar (maks 5 menit)...';
-				if (seconds > 240) aiStatusMessage = 'Hampir selesai...';
-			}, 1000);
-
-			// Call Server API
-			const res = await fetch('/api/analyze', {
-				method: 'POST',
-				headers: { 'Content-Type': 'application/json' },
-				body: JSON.stringify({
-					image: snapshot,
-					context: contextGeoJSON
-				})
-			});
-
-			const data = await res.json();
-
-			if (!res.ok) {
-				throw new Error(data.error || 'Failed to analyze');
-			}
-
-			aiResponse = data.text;
-		} catch (e: any) {
-			console.error(e);
-			aiResponse = `Error: ${e.message || 'Gagal menganalisis peta.'}`;
-			if (e.name === 'AbortError') {
-				aiResponse = 'Waktu habis. Analisis memakan waktu terlalu lama (> 5 menit). Silakan coba dengan area yang lebih kecil.';
-			}
-		} finally {
-			aiAnalyzing = false;
-			if (aiAnalysisTimer) clearInterval(aiAnalysisTimer);
-			aiStatusMessage = 'AI Analyzing Map...'; // Reset default
-			aiTimeElapsed = '0:00';
-		}
-	}
+	// AI Analysis function removed - feature disabled
 
 	function resetMap() {
 		if (mapInstance) {
@@ -354,7 +296,6 @@
 		currentArea = 0;
 		currentFeature = null;
 		isProcessing = false;
-		aiResponse = '';
 	}
 
 	function downloadResult() {
@@ -458,28 +399,7 @@
 							</button>
 						</div>
 
-						<!-- AI Analysis Result -->
-						{#if aiAnalyzing}
-							<div
-								class="mt-4 flex flex-col items-center justify-center gap-2 rounded bg-purple-50 p-4 text-xs text-purple-700"
-							>
-								<div class="flex items-center gap-2">
-									<Loader2 class="h-4 w-4 animate-spin" />
-									<span class="font-bold text-sm">{aiTimeElapsed}</span>
-								</div>
-								<span class="font-medium text-center">{aiStatusMessage}</span>
-							</div>
-						{:else if aiResponse}
-							<div class="mt-4 rounded border border-purple-100 bg-purple-50 p-3">
-								<h4 class="mb-2 flex items-center gap-2 text-xs font-bold text-purple-800">
-									<Bot class="h-3 w-3" />
-									AI Verification
-								</h4>
-								<div class="max-h-60 overflow-y-auto text-xs text-gray-700">
-									<pre class="font-mono whitespace-pre-wrap">{aiResponse}</pre>
-								</div>
-							</div>
-						{/if}
+						<!-- AI Analysis disabled -->
 					</div>
 				{/if}
 
