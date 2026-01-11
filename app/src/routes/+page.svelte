@@ -5,7 +5,11 @@
 		calculateArea,
 		formatArea,
 		isAreaValid,
-		MAX_AREA_KM2
+		MAX_AREA_KM2,
+		calculateTotalBuildingArea,
+		calculateTotalRoadLength,
+		geojsonToCSV,
+		geojsonToKML
 	} from '$lib/utils/gis';
 	import { fetchOSMData } from '$lib/utils/osm';
 	// import { analyzeMapWithAI } from '$lib/utils/gemini'; // Now handled server-side
@@ -34,7 +38,7 @@
 
 	// Result State
 	let mappingResult = $state<any>(null);
-	let stats = $state({ buildings: 0, roads: 0 });
+	let stats = $state({ buildings: 0, roads: 0, buildingArea: 0, roadLength: 0 });
 
 	function handleMapLoad(map: MapLibreMap) {
 		mapInstance = map;
@@ -186,7 +190,9 @@
 			// Calculate Stats
 			const buildings = result.features.filter((f: any) => f.properties.building).length;
 			const roads = result.features.filter((f: any) => f.properties.highway).length;
-			stats = { buildings, roads };
+            const buildingArea = calculateTotalBuildingArea(result.features);
+            const roadLength = calculateTotalRoadLength(result.features);
+			stats = { buildings, roads, buildingArea, roadLength };
 
 			// 2. Add Source & Layers to Map
 			const sourceId = 'generated-osm-data';
@@ -211,7 +217,19 @@
 				source: sourceId,
 				filter: ['has', 'building'],
 				paint: {
-					'fill-extrusion-color': '#2563eb',
+					'fill-extrusion-color': [
+						'match',
+						['get', 'building'],
+						['residential', 'apartments', 'house'],
+						'#10b981', // Green
+						['commercial', 'retail', 'office'],
+						'#3b82f6', // Blue
+						['school', 'university', 'civic', 'public'],
+						'#f59e0b', // Yellow
+						['industrial', 'warehouse'],
+						'#8b5cf6', // Purple
+						'#2563eb' // Default Blue
+					],
 					'fill-extrusion-height': [
 						'case',
 						['has', 'height'],
@@ -300,16 +318,30 @@
 
 	function downloadResult() {
 		if (!mappingResult) return;
+        downloadData(JSON.stringify(mappingResult), 'mapping_result.geojson', 'application/json');
+	}
 
-		const dataStr =
-			'data:text/json;charset=utf-8,' + encodeURIComponent(JSON.stringify(mappingResult));
+    function downloadCSV() {
+        if (!mappingResult) return;
+        const csv = geojsonToCSV(mappingResult);
+        downloadData(csv, 'mapping_result.csv', 'text/csv');
+    }
+
+    function downloadKML() {
+        if (!mappingResult) return;
+        const kml = geojsonToKML(mappingResult);
+        downloadData(kml, 'mapping_result.kml', 'application/vnd.google-earth.kml+xml');
+    }
+
+    function downloadData(content: string, filename: string, type: string) {
+		const dataStr = `data:${type};charset=utf-8,` + encodeURIComponent(content);
 		const downloadAnchorNode = document.createElement('a');
 		downloadAnchorNode.setAttribute('href', dataStr);
-		downloadAnchorNode.setAttribute('download', 'mapping_result.geojson');
+		downloadAnchorNode.setAttribute('download', filename);
 		document.body.appendChild(downloadAnchorNode);
 		downloadAnchorNode.click();
 		downloadAnchorNode.remove();
-	}
+    }
 </script>
 
 <div class="flex h-screen w-full overflow-hidden bg-gray-50">
@@ -379,25 +411,78 @@
 								<span class="block text-xs text-gray-500 uppercase">Roads</span>
 								<span class="text-xl font-bold text-gray-800">{stats.roads}</span>
 							</div>
+							<div class="rounded-lg bg-white p-3 shadow-sm">
+								<span class="block text-xs text-gray-500 uppercase">Build. Area</span>
+								<span class="text-xl font-bold text-gray-800">{stats.buildingArea.toLocaleString()} m²</span>
+							</div>
+							<div class="rounded-lg bg-white p-3 shadow-sm">
+								<span class="block text-xs text-gray-500 uppercase">Road Len.</span>
+								<span class="text-xl font-bold text-gray-800">{stats.roadLength} km</span>
+							</div>
 						</div>
 
 						<!-- Action Buttons -->
-						<div class="mt-4 grid grid-cols-2 gap-2">
-							<button
-								onclick={handleEditMode}
-								class="flex items-center justify-center gap-1 rounded border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 shadow-sm hover:bg-gray-50"
-							>
-								<Edit3 class="h-3 w-3" />
-								Edit Mode
-							</button>
-							<button
-								onclick={downloadResult}
-								class="flex items-center justify-center gap-1 rounded bg-blue-600 px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-blue-700"
-							>
-								<Save class="h-3 w-3" />
-								Download
-							</button>
+						<div class="mt-4 space-y-2">
+                            <div class="grid grid-cols-2 gap-2">
+                                <button
+                                    onclick={handleEditMode}
+                                    class="flex items-center justify-center gap-1 rounded border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 shadow-sm hover:bg-gray-50"
+                                >
+                                    <Edit3 class="h-3 w-3" />
+                                    Edit Mode
+                                </button>
+                                <button
+                                    onclick={downloadResult}
+                                    class="flex items-center justify-center gap-1 rounded bg-blue-600 px-3 py-2 text-xs font-semibold text-white shadow-sm hover:bg-blue-700"
+                                >
+                                    <Save class="h-3 w-3" />
+                                    GeoJSON
+                                </button>
+                            </div>
+                             <div class="grid grid-cols-2 gap-2">
+                                <button
+                                    onclick={downloadCSV}
+                                    class="flex items-center justify-center gap-1 rounded border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 shadow-sm hover:bg-gray-50"
+                                >
+                                    <Save class="h-3 w-3" />
+                                    CSV
+                                </button>
+                                <button
+                                    onclick={downloadKML}
+                                    class="flex items-center justify-center gap-1 rounded border border-gray-200 bg-white px-3 py-2 text-xs font-semibold text-gray-700 shadow-sm hover:bg-gray-50"
+                                >
+                                    <Save class="h-3 w-3" />
+                                    KML
+                                </button>
+                            </div>
 						</div>
+
+                        <!-- Legend -->
+                         <div class="mt-4 border-t pt-4">
+                            <h4 class="text-xs font-bold text-gray-500 uppercase mb-2">Building Types</h4>
+                            <div class="grid grid-cols-2 gap-2 text-xs">
+                                <div class="flex items-center gap-2">
+                                    <div class="w-3 h-3 rounded-full bg-green-500"></div>
+                                    <span>Residential</span>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <div class="w-3 h-3 rounded-full bg-blue-500"></div>
+                                    <span>Commercial</span>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <div class="w-3 h-3 rounded-full bg-yellow-500"></div>
+                                    <span>Public/Edu</span>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <div class="w-3 h-3 rounded-full bg-purple-500"></div>
+                                    <span>Industrial</span>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <div class="w-3 h-3 rounded-full bg-blue-600"></div>
+                                    <span>Other</span>
+                                </div>
+                            </div>
+                         </div>
 
 						<!-- AI Analysis disabled -->
 					</div>
