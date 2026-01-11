@@ -175,8 +175,8 @@
 		isProcessing = true;
 
 		try {
-			// 1. Fetch Data Real-time
-			const result = await fetchOSMData(currentFeature.features[0]);
+			// 1. Fetch Data Real-time (Pass the whole FeatureCollection or single Feature)
+			const result = await fetchOSMData(currentFeature);
 
 			if (result.features.length === 0) {
 				alert('Tidak ditemukan data (gedung/jalan) di area ini.');
@@ -256,6 +256,71 @@
 				}
 			});
 			generatedLayerIds.push('generated-roads');
+
+            // Layer: Water (Natural=water, Landuse=reservoir, etc)
+            mapInstance.addLayer({
+                id: 'generated-water',
+                type: 'fill',
+                source: sourceId,
+                filter: ['any', 
+                    ['==', 'natural', 'water'],
+                    ['==', 'landuse', 'reservoir'],
+                    ['==', 'landuse', 'basin']
+                ],
+                paint: {
+                    'fill-color': '#06b6d4', // Cyan
+                    'fill-opacity': 0.6
+                }
+            });
+            generatedLayerIds.push('generated-water');
+
+            // Layer: Parks (Leisure=park, Landuse=grass, etc)
+            mapInstance.addLayer({
+                id: 'generated-parks',
+                type: 'fill',
+                source: sourceId,
+                filter: ['any',
+                    ['==', 'leisure', 'park'],
+                    ['==', 'leisure', 'garden'],
+                    ['==', 'landuse', 'grass'],
+                    ['==', 'landuse', 'recreation_ground'],
+                    ['==', 'landuse', 'cemetery']
+                ],
+                paint: {
+                    'fill-color': '#4ade80', // Green
+                    'fill-opacity': 0.4
+                }
+            });
+            generatedLayerIds.push('generated-parks');
+
+            // Layer: Industrial/Commercial Areas (Landuse) - Low opacity base
+            mapInstance.addLayer({
+                id: 'generated-landuse-areas',
+                type: 'fill',
+                source: sourceId,
+                filter: ['any',
+                    ['==', 'landuse', 'industrial'],
+                    ['==', 'landuse', 'commercial'],
+                    ['==', 'landuse', 'retail']
+                ],
+                paint: {
+                     'fill-color': [
+                        'match',
+                        ['get', 'landuse'],
+                        'industrial', '#a855f7', // Purple
+                        'commercial', '#3b82f6', // Blue
+                        'retail', '#3b82f6',
+                        '#ccc'
+                     ],
+                    'fill-opacity': 0.2
+                },
+                layout: {
+                    // Make sure this is below buildings if possible, but maplibre handles draw order by layer creation order.
+                    // Ideally we create this BEFORE buildings, but for now we append. 
+                    // To fix order we would need to restructure addLayer calls, but since buildings are extruded, they usually sit on top visually.
+                }
+            });
+            generatedLayerIds.push('generated-landuse-areas');
 
 			// AI Analysis disabled - removed auto-run
 		} catch (error) {
@@ -480,6 +545,14 @@
                                 <div class="flex items-center gap-2">
                                     <div class="w-3 h-3 rounded-full bg-blue-600"></div>
                                     <span>Other</span>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <div class="w-3 h-3 rounded-full bg-cyan-500"></div>
+                                    <span>Water</span>
+                                </div>
+                                <div class="flex items-center gap-2">
+                                    <div class="w-3 h-3 rounded-full bg-green-400"></div>
+                                    <span>Park/Grass</span>
                                 </div>
                             </div>
                          </div>

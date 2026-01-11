@@ -6,20 +6,42 @@ import * as turf from '@turf/turf';
  */
 export async function fetchOSMData(polygonGeoJSON: any) {
     try {
-        // 1. Convert Polygon to Overpass Poly string
-        // Koordinat di GeoJSON: [lon, lat]. Overpass butuh: "lat lon"
-        const coordinates = polygonGeoJSON.geometry.coordinates[0];
-        const polyString = coordinates.map((coord: number[]) => `${coord[1]} ${coord[0]}`).join(' ');
+        // 1. Handle Feature vs FeatureCollection
+        let polygons = [];
+        if (polygonGeoJSON.type === 'FeatureCollection') {
+            polygons = polygonGeoJSON.features;
+        } else {
+            polygons = [polygonGeoJSON];
+        }
 
-        // 2. Construct Query
-        // Kita mengambil building (gedung) dan highway (jalan) di dalam polygon
-        // Timeout 25 detik
+        // 2. Build Query Parts for each polygon
+        // We will use a union query for all polygons
+        let queryBody = '';
+
+        for (const polygon of polygons) {
+            const coordinates = polygon.geometry.coordinates[0];
+            const polyString = coordinates.map((coord: number[]) => `${coord[1]} ${coord[0]}`).join(' ');
+
+            queryBody += `
+                way["building"](poly:"${polyString}");
+                relation["building"](poly:"${polyString}");
+                way["highway"](poly:"${polyString}");
+                
+                // New Layers for Phase 3
+                way["landuse"](poly:"${polyString}");
+                relation["landuse"](poly:"${polyString}");
+                way["leisure"](poly:"${polyString}");
+                relation["leisure"](poly:"${polyString}");
+                way["natural"](poly:"${polyString}");
+                relation["natural"](poly:"${polyString}");
+            `;
+        }
+
+        // 3. Construct Final Query
         const query = `
             [out:json][timeout:25];
             (
-              way["building"](poly:"${polyString}");
-              relation["building"](poly:"${polyString}");
-              way["highway"](poly:"${polyString}");
+                ${queryBody}
             );
             out geom;
         `;
